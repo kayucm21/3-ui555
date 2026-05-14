@@ -1,6 +1,6 @@
 # 3x-ui
 
-**Панель управления VPN на базе Xray-core**
+**Панель управления VPN на базе Xray-core + WARP Cloudflare**
 
 Оптимизировано для серверов с **512MB RAM** и **1GB Disk**
 
@@ -10,25 +10,70 @@
 - **VMess** (TLS)
 - **Trojan** (TLS)
 
+## 🛡️ WARP Cloudflare
+
+Скрывает реальный IP сервера через сеть Cloudflare. Ваш IP будет принадлежать Cloudflare, а не хостинг-провайдеру.
+
 ## 📦 Установка
 
-### Автоматическая установка
+### Быстрая установка (одной командой)
 
 ```bash
-curl -o install.sh https://raw.githubusercontent.com/kayucm21/3x-ui2011/main/install/install.sh
-chmod +x install.sh
-./install.sh
+curl -fsSL https://raw.githubusercontent.com/kayucm21/3-ui555/main/install/install.sh | sudo bash
 ```
 
 ### Ручная установка
 
 ```bash
 # Склонировать репозиторий
-git clone https://github.com/kayucm21/3x-ui2011.git
-cd 3x-ui2011
+git clone https://github.com/kayucm21/3-ui555.git
+cd 3-ui555
 
 # Запустить установку
 sudo bash install/install.sh
+```
+
+После установки в консоли отобразятся:
+- **Логин и пароль** панели
+- **Порты** для всех протоколов
+- **Ссылки** для подключения (VLESS, VMess, Trojan)
+
+## 🔐 Данные после установки
+
+После установки все данные сохраняются в:
+```
+/etc/3x-ui/panel_credentials.txt   # Логин, пароль, URL панели
+/etc/3x-ui/client_info.txt         # UUID, порты
+```
+
+### Показать данные
+
+```bash
+sudo bash /etc/3x-ui/scripts/show_data.sh
+```
+
+### Изменить логин/пароль
+
+```bash
+sudo bash /etc/3x-ui/scripts/change_password.sh
+```
+
+## 🛡️ WARP Cloudflare
+
+### Установка WARP
+
+```bash
+sudo bash /etc/3x-ui/scripts/warp.sh --install
+```
+
+### Управление WARP
+
+```bash
+sudo bash /etc/3x-ui/scripts/warp.sh --status   # Статус
+sudo bash /etc/3x-ui/scripts/warp.sh --start    # Запуск
+sudo bash /etc/3x-ui/scripts/warp.sh --stop     # Остановка
+sudo bash /etc/3x-ui/scripts/warp.sh --test     # Тест скорости
+sudo bash /etc/3x-ui/scripts/warp.sh --uninstall # Удаление
 ```
 
 ## 🔄 Обновление
@@ -139,17 +184,24 @@ sudo journalctl -u 3x-ui -f
 ```
 3x-ui/
 ├── install/
-│   ├── install.sh      # Скрипт установки
-│   ├── update.sh       # Скрипт обновления
-│   └── uninstall.sh    # Скрипт удаления
+│   ├── install.sh          # Скрипт установки
+│   ├── update.sh           # Скрипт обновления
+│   ├── uninstall.sh        # Скрипт удаления
+│   └── setup.sh            # Быстрая настройка
 ├── scripts/
-│   ├── generate_client.sh  # Генерация клиентов
-│   ├── discord_notify.sh   # Discord уведомления
-│   └── optimize.sh         # Оптимизация системы
+│   ├── generate_client.sh      # Генерация клиентов
+│   ├── generate_reality_keys.sh # Reality ключи
+│   ├── discord_notify.sh       # Discord уведомления
+│   ├── optimize.sh             # Оптимизация системы
+│   ├── monitor.sh              # Мониторинг
+│   ├── warp.sh                 # WARP Cloudflare
+│   ├── show_data.sh            # Показать данные
+│   └── change_password.sh      # Смена пароля
 ├── config/
-│   └── config.json     # Конфигурация Xray
+│   ├── config.json         # Конфигурация Xray
+│   └── monitor.conf        # Настройки мониторинга
 └── web/
-    └── ...             # Веб-интерфейс
+    └── index.html          # Веб-интерфейс
 ```
 
 ## 🔧 Конфигурация
@@ -176,6 +228,7 @@ nameserver 9.9.9.9
 - UUID генерируется для каждого клиента
 - Reality протокол для VLESS
 - TLS для VMess и Trojan
+- WARP скрывает реальный IP
 
 ## 📊 Системные требования
 
@@ -186,8 +239,7 @@ nameserver 9.9.9.9
 
 ## 📞 Поддержка
 
-- GitHub Issues: https://github.com/kayucm21/3x-ui2011/issues
-- Discord: [ссылка]
+- GitHub Issues: https://github.com/kayucm21/3-ui555/issues
 
 ## 📄 Лицензия
 
@@ -195,4 +247,4 @@ MIT License
 
 ---
 
-**© 2024 3x-ui** | [kayucm21/3x-ui2011](https://github.com/kayucm21/3x-ui2011)
+**© 2024 3x-ui** | [kayucm21/3-ui555](https://github.com/kayucm21/3-ui555)

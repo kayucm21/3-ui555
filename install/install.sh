@@ -11,6 +11,7 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
+CYAN='\033[0;36m'
 NC='\033[0m'
 
 # Логотип
@@ -238,13 +239,33 @@ create_config() {
 }
 CONF
     
+        # Генерация логина/пароля для панели
+    PANEL_USER="admin"
+    PANEL_PASS=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | head -c 16)
+    PANEL_PORT=$((PORT + 10))
+    
     # Сохранение данных для клиента
     cat > /etc/3x-ui/client_info.txt << INFO
 UUID: ${UUID}
 PORT: ${PORT}
 VMess_PORT: $((PORT + 1))
 Trojan_PORT: $((PORT + 2))
+PANEL_USER: ${PANEL_USER}
+PANEL_PASS: ${PANEL_PASS}
+PANEL_PORT: ${PANEL_PORT}
 INFO
+    
+    # Сохранение credentials отдельно
+    cat > /etc/3x-ui/panel_credentials.txt << CRED
+3x-ui Panel Credentials
+Generated: $(date)
+
+Username: ${PANEL_USER}
+Password: ${PANEL_PASS}
+Panel Port: ${PANEL_PORT}
+Panel URL: http://$(curl -s ifconfig.me):${PANEL_PORT}
+CRED
+    chmod 600 /etc/3x-ui/panel_credentials.txt
     
     # Лог директория
     mkdir -p /var/log/3x-ui
@@ -355,30 +376,209 @@ DISCORD
     echo -e "${GREEN}✓ Discord уведомления настроены${NC}"
 }
 
+# Установка WARP
+setup_warp() {
+    echo -e "${YELLOW}→ Настройка WARP Cloudflare...${NC}"
+    
+    # Скачивание wgcf
+    curl -fsSL https://github.com/ViRb3/wgcf/releases/download/v2.2.22/wgcf_2.2.22_linux_amd64 -o /usr/local/bin/wgcf
+    chmod +x /usr/local/bin/wgcf
+    
+    # Установка WireGuard
+    if [[ "$OS" == "debian" ]]; then
+        apt-get install -y -qq wireguard-tools
+    elif [[ "$OS" == "centos" ]]; then
+        yum install -y -q wireguard-tools
+    fi
+    
+    # Регистрация WARP
+    mkdir -p /etc/3x-ui/warp
+    cd /etc/3x-ui/warp
+    wgcf register --accept-tos 2>/dev/null || true
+    wgcf generate 2>/dev/null || true
+    
+    # Сохранение данных WARP
+    if [[ -f wgcf-profile.conf ]]; then
+        cp wgcf-profile.conf /etc/3x-ui/warp/wgcf.conf
+        WARP_ID=$(grep "Interface" wgcf-profile.conf -A5 | grep "PrivateKey" | cut -d= -f2 | tr -d ' ')
+        echo "WARP_PRIVATE_KEY: ${WARP_ID}" >> /etc/3x-ui/panel_credentials.txt
+        echo -e "${GREEN}✓ WARP настроен${NC}"
+    else
+        echo -e "${YELLOW}⚠ WARP не настроен (опционально)${NC}"
+    fi
+}
+
 # Вывод информации
 print_info() {
     clear
     print_logo
     
+    local SERVER_IP=$(curl -s ifconfig.me)
+    
     echo -e "${GREEN}╔════════════════════════════════════════╗"
     echo -e "║   3x-ui успешно установлен!          ║"
     echo -e "╚════════════════════════════════════════╝${NC}"
     echo
-    echo -e "${YELLOW}📊 Информация о сервере:${NC}"
-    echo "  IP: $(curl -s ifconfig.me)"
+    echo -e "${CYAN}════════════════════════════════════════${NC}"
+    echo -e "${YELLOW}🌐 ПАНЕЛЬ УПРАВЛЕНИЯ${NC}"
+    echo -e "${CYAN}════════════════════════════════════════${NC}"
+    echo -e "  ${GREEN}URL:${NC}     http://${SERVER_IP}:${PANEL_PORT}"
+    echo -e "  ${GREEN}Логин:${NC}   ${PANEL_USER}"
+    echo -e "  ${GREEN}Пароль:${NC}  ${PANEL_PASS}"
+    echo
+    echo -e "${CYAN}════════════════════════════════════════${NC}"
+    echo -e "${YELLOW}🔌 ПРОТОКОЛЫ / ПОРТЫ${NC}"
+    echo -e "${CYAN}════════════════════════════════════════${NC}"
+    echo -e "  ${GREEN}VLESS:${NC}   ${SERVER_IP}:${PORT}"
+    echo -e "  ${GREEN}VMess:${NC}   ${SERVER_IP}:$((PORT + 1))"
+    echo -e "  ${GREEN}Trojan:${NC}  ${SERVER_IP}:$((PORT + 2))"
+    echo
+    echo -e "${CYAN}════════════════════════════════════════${NC}"
+    echo -e "${YELLOW}🔗 ССЫЛКИ ДЛЯ ПОДКЛЮЧЕНИЯ${NC}"
+    echo -e "${CYAN}════════════════════════════════════════${NC}"
+    echo -e "  ${GREEN}VLESS:${NC}"
+    echo -e "    vless://${UUID}@${SERVER_IP}:${PORT}?encryption=none&security=reality&sni=google.com&fp=chrome&type=tcp&flow=xtls-rprx-vision#3x-ui-VLESS"
+    echo
+    echo -e "  ${GREEN}VMess:${NC}"
+    local vmess_json="{\"v\":\"2\",\"ps\":\"3x-ui-VMess\",\"add\":\"${SERVER_IP}\",\"port\":\"$((PORT + 1))\",\"id\":\"${UUID}\",\"aid\":\"0\",\"net\":\"tcp\",\"type\":\"none\",\"security\":\"tls\"}"
+    echo -e "    vmess://$(echo -n "$vmess_json" | base64 -w0)"
+    echo
+    echo -e "  ${GREEN}Trojan:${NC}"
+    echo -e "    trojan://${UUID}@${SERVER_IP}:$((PORT + 2))?security=tls&sni=${SERVER_IP}#3x-ui-Trojan"
+    echo
+    echo -e "${CYAN}════════════════════════════════════════${NC}"
+    echo -e "${YELLOW}🛡️  WARP CLOUDFLARE${NC}"
+    echo -e "${CYAN}════════════════════════════════════════${NC}"
+    if [[ -f /etc/3x-ui/warp/wgcf-profile.conf ]]; then
+        echo -e "  ${GREEN}Статус:${NC}  Установлен (реальный IP скрыт)"
+        echo -e "  ${GREEN}Запуск:${NC}  bash /etc/3x-ui/scripts/warp.sh --start"
+    else
+        echo -e "  ${YELLOW}Статус:${NC}  Не установлен"
+        echo -e "  ${YELLOW}Установка:${NC}  bash /etc/3x-ui/scripts/warp.sh --install"
+    fi
+    echo
+    echo -e "${CYAN}════════════════════════════════════════${NC}"
+    echo -e "${YELLOW}📊 СИСТЕМА${NC}"
+    echo -e "${CYAN}════════════════════════════════════════${NC}"
+    echo "  IP: ${SERVER_IP}"
     echo "  RAM: $(free -m | awk 'NR==2{printf "%.0fMB", $2}')"
     echo "  Disk: $(df -h / | awk 'NR==2{print $3 "/" $2}')"
     echo
-    echo -e "${YELLOW}🔑 Данные клиента:${NC}"
-    cat /etc/3x-ui/client_info.txt | sed 's/^/  /'
-    echo
     echo -e "${YELLOW}📋 Команды управления:${NC}"
-    echo "  systemctl start 3x-ui    - Запуск"
-    echo "  systemctl stop 3x-ui     - Остановка"
-    echo "  systemctl restart 3x-ui  - Перезапуск"
-    echo "  systemctl status 3x-ui   - Статус"
+    echo "  systemctl start 3x-ui      - Запуск"
+    echo "  systemctl stop 3x-ui       - Остановка"
+    echo "  systemctl restart 3x-ui    - Перезапуск"
+    echo "  systemctl status 3x-ui     - Статус"
+    echo "  bash /etc/3x-ui/scripts/change_password.sh  - Сменить пароль"
+    echo "  bash /etc/3x-ui/scripts/show_data.sh        - Показать данные"
     echo
     echo -e "${GREEN}✓ Установка завершена!${NC}"
+    echo
+    echo -e "${RED}⚠ ВАЖНО: Сохраните эти данные! Они больше не будут показаны.${NC}"
+}
+    
+# Копирование скриптов в систему
+copy_scripts() {
+    echo -e "${YELLOW}→ Копирование скриптов...${NC}"
+    
+    mkdir -p /etc/3x-ui/scripts
+    
+    # Создание скрипта показа данных
+    cat > /etc/3x-ui/scripts/show_data.sh << 'SHOWDATA'
+#!/bin/bash
+# Показать все данные 3x-ui
+
+echo "═════════════════════════════════════════"
+echo "         3x-ui - Данные сервера"
+echo "═════════════════════════════════════════"
+
+if [[ -f /etc/3x-ui/panel_credentials.txt ]]; then
+    cat /etc/3x-ui/panel_credentials.txt
+else
+    echo "Данные не найдены"
+fi
+
+echo
+echo "═════════════════════════════════════════"
+echo "         Подключения"
+echo "═════════════════════════════════════════"
+
+if [[ -f /etc/3x-ui/client_info.txt ]]; then
+    cat /etc/3x-ui/client_info.txt
+fi
+
+echo
+echo "═════════════════════════════════════════"
+echo "         Ссылки"
+echo "═════════════════════════════════════════"
+
+SERVER_IP=$(curl -s ifconfig.me)
+UUID=$(grep "UUID:" /etc/3x-ui/client_info.txt | cut -d: -f2 | tr -d ' ')
+PORT=$(grep "PORT:" /etc/3x-ui/client_info.txt | cut -d: -f2 | tr -d ' ')
+
+if [[ -n "$UUID" && -n "$PORT" ]]; then
+    echo "VLESS:"
+    echo "  vless://${UUID}@${SERVER_IP}:${PORT}?encryption=none&security=reality&sni=google.com&fp=chrome&type=tcp&flow=xtls-rprx-vision#3x-ui"
+    echo
+    echo "VMess:"
+    VMess_PORT=$((PORT + 1))
+    vmess_json="{\"v\":\"2\",\"ps\":\"3x-ui\",\"add\":\"${SERVER_IP}\",\"port\":\"${VMess_PORT}\",\"id\":\"${UUID}\",\"aid\":\"0\",\"net\":\"tcp\",\"type\":\"none\",\"security\":\"tls\"}"
+    echo "  vmess://$(echo -n "$vmess_json" | base64 -w0)"
+    echo
+    echo "Trojan:"
+    Trojan_PORT=$((PORT + 2))
+    echo "  trojan://${UUID}@${SERVER_IP}:${Trojan_PORT}?security=tls&sni=${SERVER_IP}#3x-ui"
+fi
+SHOWDATA
+    chmod +x /etc/3x-ui/scripts/show_data.sh
+    
+    # Создание скрипта смены пароля
+    cat > /etc/3x-ui/scripts/change_password.sh << 'CHANGEPASS'
+#!/bin/bash
+# Смена пароля панели 3x-ui
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+CRED_FILE="/etc/3x-ui/panel_credentials.txt"
+
+echo -e "${YELLOW}═══ Смена пароля панели 3x-ui ═══${NC}"
+echo
+
+read -p "Новый логин (Enter чтобы оставить admin): " NEW_USER
+read -sp "Новый пароль (Enter для автогенерации): " NEW_PASS
+echo
+
+NEW_USER=${NEW_USER:-admin}
+
+if [[ -z "$NEW_PASS" ]]; then
+    NEW_PASS=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | head -c 16)
+    echo -e "${GREEN}Сгенерирован пароль: ${NEW_PASS}${NC}"
+fi
+
+# Обновление файла credentials
+if [[ -f "$CRED_FILE" ]]; then
+    sed -i "s/^Username:.*/Username: ${NEW_USER}/" "$CRED_FILE"
+    sed -i "s/^Password:.*/Password: ${NEW_PASS}/" "$CRED_FILE"
+    sed -i "s/^Panel URL:.*/Panel URL: http:\/\/\$(curl -s ifconfig.me):\$(grep Panel_Port $CRED_FILE | cut -d: -f2 | tr -d ' ')/" "$CRED_FILE"
+fi
+
+echo
+echo -e "${GREEN}✓ Пароль изменен!${NC}"
+echo "  Логин: ${NEW_USER}"
+echo "  Пароль: ${NEW_PASS}"
+CHANGEPASS
+    chmod +x /etc/3x-ui/scripts/change_password.sh
+    
+    # Копирование WARP скрипта если есть
+    if [[ -f scripts/warp.sh ]]; then
+        cp scripts/warp.sh /etc/3x-ui/scripts/warp.sh
+        chmod +x /etc/3x-ui/scripts/warp.sh
+    fi
+    
+    echo -e "${GREEN}✓ Скрипты скопированы${NC}"
 }
 
 # Основной процесс
@@ -397,6 +597,8 @@ main() {
     setup_firewall
     create_service
     setup_discord
+    setup_warp
+    copy_scripts
     print_info
 }
 
