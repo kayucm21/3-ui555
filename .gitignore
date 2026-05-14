@@ -1,0 +1,33 @@
+# Logs
+*.log
+logs/
+
+# Configs with sensitive data
+config.json
+client_info.txt
+reality_keys.txt
+discord_config.conf
+
+# Backup files
+*.bak
+*.backup
+backup/
+
+# Temporary files
+*.tmp
+temp/
+tmp/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Dependencies
+node_modules/
+vendor/
