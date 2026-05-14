@@ -38,12 +38,15 @@ confirm() {
 }
 
 stop_service() {
-    echo -e "${YELLOW}→ Остановка сервиса...${NC}"
+    echo -e "${YELLOW}→ Остановка сервисов...${NC}"
     systemctl stop 3x-ui 2>/dev/null || true
+    systemctl stop 3x-ui-web 2>/dev/null || true
     systemctl disable 3x-ui 2>/dev/null || true
+    systemctl disable 3x-ui-web 2>/dev/null || true
     rm -f /etc/systemd/system/3x-ui.service
+    rm -f /etc/systemd/system/3x-ui-web.service
     systemctl daemon-reload
-    echo -e "${GREEN}✓ Сервис остановлен${NC}"
+    echo -e "${GREEN}✓ Сервисы остановлены${NC}"
 }
 
 remove_xray() {

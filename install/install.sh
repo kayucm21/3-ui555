@@ -85,12 +85,12 @@ install_dependencies() {
     
     if [[ "$OS" == "debian" ]]; then
         apt-get update -qq
-        apt-get install -y -qq curl wget socat cron netfilter-persistent iptables unzip openssl jq
+        apt-get install -y -qq curl wget socat cron netfilter-persistent iptables unzip openssl jq python3
     elif [[ "$OS" == "centos" ]]; then
-        yum install -y -q curl wget socat cronie iptables-services unzip openssl jq
+        yum install -y -q curl wget socat cronie iptables-services unzip openssl jq python3
         systemctl enable iptables
     elif [[ "$OS" == "alpine" ]]; then
-        apk add --quiet curl wget socat iptables cronie unzip openssl jq
+        apk add --quiet curl wget socat iptables cronie unzip openssl jq python3
     fi
     
     echo -e "${GREEN}✓ Зависимости установлены${NC}"
@@ -379,6 +379,105 @@ SERVICE
     echo -e "${GREEN}✓ Сервис создан и запущен${NC}"
 }
 
+# Веб-панель
+setup_web_panel() {
+    echo -e "${YELLOW}→ Настройка веб-панели...${NC}"
+    
+    # Копирование веб-файлов
+    mkdir -p /etc/3x-ui/web
+    
+    # Если скрипт запущен из git-репозитория, копируем web/
+    if [[ -d "web" && -f "web/index.html" ]]; then
+        cp web/index.html /etc/3x-ui/web/
+    fi
+    
+    # Копирование сервера
+    if [[ -f "web/server.py" ]]; then
+        cp web/server.py /etc/3x-ui/web_server.py
+    else
+        # Создаём сервер inline если файла нет
+        cat > /etc/3x-ui/web_server.py << 'PYTHON'
+#!/usr/bin/env python3
+import http.server, socketserver, base64, sys, os
+PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 8080
+AUTH_FILE = "/etc/3x-ui/panel_credentials.txt"
+WEB_DIR = "/etc/3x-ui/web"
+
+def get_credentials():
+    user, passwd = "admin", "admin"
+    try:
+        with open(AUTH_FILE, "r") as f:
+            for line in f:
+                if line.startswith("Username:"): user = line.split(":", 1)[1].strip()
+                elif line.startswith("Password:"): passwd = line.split(":", 1)[1].strip()
+    except: pass
+    return user, passwd
+
+VALID_USER, VALID_PASS = get_credentials()
+VALID_AUTH = base64.b64encode(f"{VALID_USER}:{VALID_PASS}".encode()).decode()
+
+class AuthHandler(http.server.SimpleHTTPRequestHandler):
+    def do_AUTHHEAD(self):
+        self.send_response(401)
+        self.send_header("WWW-Authenticate", 'Basic realm="3x-ui Panel"')
+        self.send_header("Content-type", "text/html")
+        self.end_headers()
+    def do_GET(self):
+        auth_header = self.headers.get("Authorization")
+        if auth_header is None or not auth_header.startswith("Basic "):
+            self.do_AUTHHEAD()
+            self.wfile.write(b"<html><body><h1>401 Unauthorized</h1></body></html>")
+            return
+        if auth_header.split(" ", 1)[1] != VALID_AUTH:
+            self.do_AUTHHEAD()
+            self.wfile.write(b"<html><body><h1>401 Unauthorized</h1></body></html>")
+            return
+        super().do_GET()
+    def log_message(self, format, *args): pass
+
+if __name__ == "__main__":
+    os.chdir(WEB_DIR)
+    with socketserver.TCPServer(("0.0.0.0", PORT), AuthHandler) as httpd:
+        print(f"3x-ui panel on port {PORT}")
+        httpd.serve_forever()
+PYTHON
+    fi
+    
+    chmod +x /etc/3x-ui/web_server.py
+    
+    # Создание systemd сервиса для веб-панели
+    cat > /etc/systemd/system/3x-ui-web.service << EOF
+[Unit]
+Description=3x-ui Web Panel
+After=network.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/bin/python3 /etc/3x-ui/web_server.py ${PANEL_PORT}
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    
+    systemctl daemon-reload
+    systemctl enable 3x-ui-web
+    systemctl start 3x-ui-web
+    
+    # Открытие порта панели в firewall
+    iptables -A INPUT -p tcp --dport ${PANEL_PORT} -j ACCEPT
+    if command -v netfilter-persistent &> /dev/null; then
+        netfilter-persistent save
+    elif command -v iptables-save &> /dev/null; then
+        mkdir -p /etc/iptables
+        iptables-save > /etc/iptables/rules.v4
+    fi
+    
+    echo -e "${GREEN}✓ Веб-панель запущена на порту ${PANEL_PORT}${NC}"
+}
+
 # Discord уведомления
 setup_discord() {
     echo -e "${YELLOW}→ Настройка Discord уведомлений...${NC}"
@@ -632,6 +731,7 @@ main() {
     setup_dns
     setup_firewall
     create_service
+    setup_web_panel
     setup_discord
     setup_warp
     copy_scripts
